@@ -65,3 +65,7 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Credentials
+meetings/credentials.ini
+meetings/client_id.json

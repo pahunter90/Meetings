@@ -3,6 +3,7 @@ from flask import render_template
 from flask import request
 from flask import url_for
 import uuid
+import heapq
 
 import json
 import logging
@@ -64,10 +65,35 @@ def choose():
       app.logger.debug("Redirecting to authorization")
       return flask.redirect(flask.url_for('oauth2callback'))
 
-    gcal_service = get_gcal_service(credentials)
+    service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
-    flask.g.calendars = list_calendars(gcal_service)
+    flask.g.calendars = list_calendars(service)
     return render_template('index.html')
+
+
+@app.route("/show_events")
+def show_events():
+    ## For each calendar, print the events in date and time order
+    app.logger.debug("Finding Events for each Calendar")
+    app.logger.debug("Checking credentials for Google calendar access")
+    credentials = valid_credentials()
+    if not credentials:
+      app.logger.debug("Redirecting to authorization")
+      return flask.redirect(flask.url_for('oauth2callback'))
+
+    service = get_gcal_service(credentials)
+    calendars = request.args.getlist('include')
+    events = []
+    flask.g.events = []
+    for calendar in calendars:
+        list_events = get_events(calendar, service)['items']
+        for i in range(len(list_events)):
+            if 'transparency' not in list_events[i]:
+                events.append(list_events[i])
+    events = sort_events(events)
+    flask.g.events = events
+    return render_template('show_events.html')
+
 
 ####
 #
@@ -133,6 +159,24 @@ def get_gcal_service(credentials):
   app.logger.debug("Returning service")
   return service
 
+
+def sort_events(events):
+    H = []
+    for i in range(len(events)):
+        event = events[i]
+        if event:
+            E = (arrow.get(event['start']['dateTime']),
+                 arrow.get(event['end']['dateTime']),
+                 event['summary'])
+            heapq.heappush(H, E)
+    events = []
+    while H:
+        event = heapq.heappop(H)
+        event_start = event[0].format("HH:mm MM-DD")
+        event_end = event[1].format("HH:mm MM-DD")
+        events.append((event_start, event_end))
+    return events
+
 @app.route('/oauth2callback')
 def oauth2callback():
   """
@@ -192,8 +236,6 @@ def setrange():
     widget.
     """
     app.logger.debug("Entering setrange")  
-    flask.flash("Setrange gave us '{}'".format(
-      request.form.get('daterange')))
     daterange = request.form.get('daterange')
     flask.session['daterange'] = daterange
     daterange_parts = daterange.split()
@@ -317,6 +359,20 @@ def list_calendars(service):
             })
     return sorted(result, key=cal_sort_key)
 
+def get_events(calendar, service):
+    """
+    Given a calendar in a list of calendars
+    return a list of events from that calendar
+    calendar is the calender description
+    """
+    calendar_list = list_calendars(service)
+    for cal in calendar_list:
+        if cal['summary'] == calendar:
+            event_calendar = cal
+    return service.events().list(calendarId=event_calendar['id'], 
+                                 singleEvents=True,
+                                 timeMin=flask.session['begin_date'], 
+                                 timeMax=flask.session['end_date']).execute() 
 
 def cal_sort_key( cal ):
     """

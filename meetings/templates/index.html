@@ -38,9 +38,9 @@
 <h1>Busy times</h1>
 
 <!--
-  -- If there are any warnings or other messages from a prior action,
-  -- they appear above the rest of the content, just until the next 
-  -- action.
+   If there are any warnings or other messages from a prior action,
+   they appear above the rest of the content, just until the next 
+   action.
   -->
 
 {% with messages = get_flashed_messages() %}
@@ -89,18 +89,16 @@
     prefer down then across). 
     -->
 {% if g.calendars is defined  %}
-  <div class="row">
-  {% for cal in g.calendars if cal.selected %}
-          <div class="col-md-4">
-	   {{ cal.summary }}
-          </div>
-         {% if loop.index is divisibleby 3 %}
-          </div> <div class="row">
-         {% endif %}
-  {% endfor %}
-  </div>
+<form action="/show_events">
+  <h2>Choose Calendars to Include</h2>
+    {% for cal in g.calendars if cal.selected %}
+      <input type="checkbox" id="{{ cal.summary }}" name="include" value="{{ cal.summary }}">
+      <label for="{{ cal.summary }}">{{ cal.summary }}</label>
+      <br />
+    {% endfor %}
+  <input type="submit" value="Submit">
+</form>
 {% endif %}
-    
 
   </div>  <!-- container (for bootstrap) -->
   </body> </html>
