@@ -55,7 +55,7 @@
 
 <h2>Date range</h2>
   <form action="/setrange" method="post">
-  <input type="text" name="daterange" size="12"
+  <input type="text" name="daterange" size="18"
     {% if session.daterange is defined %}
          value="{{session.daterange}}"
     {% endif %}
@@ -78,6 +78,15 @@
        );
     });
   </script>
+  
+  <input type=time name="earliest" 
+    {% if session.begin_time is defined %}
+      value="{{session.begin_time}}"
+    {% endif %} >
+  <input type=time name="latest"
+    {% if session.end_time is defined %}
+      value="{{session.end_time}}"
+    {% endif %} >
 
 <br /><input type="submit" value="Choose" />
 </form>
@@ -89,7 +98,7 @@
     prefer down then across). 
     -->
 {% if g.calendars is defined  %}
-<form action="/show_events">
+<form method="post" action="/show_events">
   <h2>Choose Calendars to Include</h2>
     {% for cal in g.calendars if cal.selected %}
       <input type="checkbox" id="{{ cal.summary }}" name="include" value="{{ cal.summary }}">

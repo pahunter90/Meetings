@@ -71,7 +71,7 @@ def choose():
     return render_template('index.html')
 
 
-@app.route("/show_events")
+@app.route("/show_events", methods=['POST'])
 def show_events():
     ## For each calendar, print the events in date and time order
     app.logger.debug("Finding Events for each Calendar")
@@ -80,19 +80,68 @@ def show_events():
     if not credentials:
       app.logger.debug("Redirecting to authorization")
       return flask.redirect(flask.url_for('oauth2callback'))
-
     service = get_gcal_service(credentials)
-    calendars = request.args.getlist('include')
+    calendars = flask.request.form.getlist('include')
+    
+    # Returns a list of dateTime ranges to look through
+    day_ranges = get_dateTime_list()
+    
     events = []
     flask.g.events = []
     for calendar in calendars:
         list_events = get_events(calendar, service)['items']
         for i in range(len(list_events)):
             if 'transparency' not in list_events[i]:
-                events.append(list_events[i])
+                event_start_time = arrow.get(list_events[i]['start']['dateTime'])
+                event_end_time = arrow.get(list_events[i]['end']['dateTime'])
+                for date_range in day_ranges:
+                    if date_range[0] <= event_start_time <= date_range[1] or \
+                       date_range[0] <= event_end_time <= date_range[1] or \
+                       (date_range[0] >= event_start_time and date_range[1] <= event_end_time):
+                        if list_events[i] in events:
+                            continue
+                        else:
+                            events.append(list_events[i])
     events = sort_events(events)
     flask.g.events = events
     return render_template('show_events.html')
+
+def get_dateTime_list():
+    """
+    Returns a list of tuples that are start and end times for
+    each acceptable chunk in the date range
+    """
+    b_hour, b_minute, e_hour, e_minute = get_flask_times()
+    start_day = arrow.get(flask.session['begin_date'])
+    end_day = arrow.get(flask.session['end_date']).ceil('day')
+    
+    #Set the first time range
+    start_time = start_day.replace(hour=b_hour, minute=b_minute)
+    end_time = start_day.replace(hour=e_hour, minute=e_minute)
+
+    #Set the ultimate end day and time
+    end_day = end_day.replace(hour=e_hour, minute=e_minute)
+    
+    day_ranges = []
+    if start_time >= end_time:
+        end_time = end_time.shift(days=+1)
+    while start_time < end_day:
+        day_ranges.append((start_time, end_time))
+        start_time = start_time.shift(days=+1)
+        end_time = end_time.shift(days=+1)
+    print(day_ranges)
+    return day_ranges
+
+def get_flask_times():
+    """
+    Returns the integer versions of the time session objects as hour and minute
+    """
+    b_hour = int(flask.session['begin_time'][:2])
+    b_minute = int(flask.session['begin_time'][-2:])
+    e_hour = int(flask.session['end_time'][:2])
+    e_minute = int(flask.session['end_time'][-2:])
+    return [b_hour, b_minute, e_hour, e_minute]
+
 
 
 ####
@@ -172,9 +221,11 @@ def sort_events(events):
     events = []
     while H:
         event = heapq.heappop(H)
-        event_start = event[0].format("HH:mm MM-DD")
-        event_end = event[1].format("HH:mm MM-DD")
-        events.append((event_start, event_end))
+        if event[0].date() == event[1].date():
+            date = event[0].format("MM-DD: hh:mma") + " to " + event[1].format("hh:mma")
+        else:
+            date = event[0].format("MM-DD: hh:mma") + " to " + event[1].format("MM-DD: hh:mma")
+        events.append((date, event[2]))
     return events
 
 @app.route('/oauth2callback')
@@ -237,6 +288,8 @@ def setrange():
     """
     app.logger.debug("Entering setrange")  
     daterange = request.form.get('daterange')
+    flask.session['begin_time'] = request.form.get('earliest')
+    flask.session['end_time'] = request.form.get('latest')
     flask.session['daterange'] = daterange
     daterange_parts = daterange.split()
     flask.session['begin_date'] = interpret_date(daterange_parts[0])
@@ -369,10 +422,12 @@ def get_events(calendar, service):
     for cal in calendar_list:
         if cal['summary'] == calendar:
             event_calendar = cal
+    time_min = arrow.get(flask.session['begin_date']).floor('day')
+    time_max = arrow.get(flask.session['end_date']).ceil('day')
     return service.events().list(calendarId=event_calendar['id'], 
                                  singleEvents=True,
-                                 timeMin=flask.session['begin_date'], 
-                                 timeMax=flask.session['end_date']).execute() 
+                                 timeMin=time_min, 
+                                 timeMax=time_max).execute() 
 
 def cal_sort_key( cal ):
     """

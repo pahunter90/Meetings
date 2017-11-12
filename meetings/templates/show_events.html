@@ -43,7 +43,7 @@
 {% if g.events is defined %}
   {% for event in g.events %}
   <div>
-    Busy: {{ event[0] }} to {{ event[1] }}
+    {{ event[1] }} <br /> {{ event[0] }} <br /><br />
   </div>
   {% endfor %}
 {% endif %}
