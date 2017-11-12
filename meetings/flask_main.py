@@ -137,8 +137,6 @@ def get_dateTime_list():
         day_ranges.append((start_time, end_time))
         start_time = start_time.shift(days=+1)
         end_time = end_time.shift(days=+1)
-    for day_range in day_ranges:
-        print(day_range)
     return day_ranges
 
 def get_flask_times():
