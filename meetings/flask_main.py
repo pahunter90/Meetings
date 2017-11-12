@@ -132,6 +132,7 @@ def get_dateTime_list():
     day_ranges = []
     if start_time >= end_time:
         end_time = end_time.shift(days=+1)
+        end_day = end_day.shift(days=+1)
     while start_time < end_day:
         day_ranges.append((start_time, end_time))
         start_time = start_time.shift(days=+1)
