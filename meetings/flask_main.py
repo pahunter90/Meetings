@@ -91,7 +91,12 @@ def show_events():
     for calendar in calendars:
         list_events = get_events(calendar, service)['items']
         for i in range(len(list_events)):
+            transparent = True
             if 'transparency' not in list_events[i]:
+                transparent = False
+            elif list_events[i]['transparency'] == 'opaque':
+                transparent = False
+            if not transparent:
                 event_start_time = arrow.get(list_events[i]['start']['dateTime'])
                 event_end_time = arrow.get(list_events[i]['end']['dateTime'])
                 for date_range in day_ranges:
@@ -129,7 +134,6 @@ def get_dateTime_list():
         day_ranges.append((start_time, end_time))
         start_time = start_time.shift(days=+1)
         end_time = end_time.shift(days=+1)
-    print(day_ranges)
     return day_ranges
 
 def get_flask_times():
