@@ -100,8 +100,8 @@ def show_events():
                 event_start_time = arrow.get(list_events[i]['start']['dateTime'])
                 event_end_time = arrow.get(list_events[i]['end']['dateTime'])
                 for date_range in day_ranges:
-                    if date_range[0] <= event_start_time <= date_range[1] or \
-                       date_range[0] <= event_end_time <= date_range[1] or \
+                    if date_range[0] < event_start_time < date_range[1] or \
+                       date_range[0] < event_end_time < date_range[1] or \
                        (date_range[0] >= event_start_time and date_range[1] <= event_end_time):
                         if list_events[i] in events:
                             continue
@@ -140,10 +140,10 @@ def get_flask_times():
     """
     Returns the integer versions of the time session objects as hour and minute
     """
-    b_hour = int(flask.session['begin_time'][:2])
-    b_minute = int(flask.session['begin_time'][-2:])
-    e_hour = int(flask.session['end_time'][:2])
-    e_minute = int(flask.session['end_time'][-2:])
+    b_hour = int(to_24(flask.session['begin_time'])[:2])
+    b_minute = int(to_24(flask.session['begin_time'])[-2:])
+    e_hour = int(to_24(flask.session['end_time'])[:2])
+    e_minute = int(to_24(flask.session['end_time'])[-2:])
     return [b_hour, b_minute, e_hour, e_minute]
 
 
@@ -303,6 +303,19 @@ def setrange():
       flask.session['begin_date'], flask.session['end_date']))
     return flask.redirect(flask.url_for("choose"))
 
+
+#convert from 12hr to 24hr time
+def to_24(time):
+    hour = time[0:2]
+    minute = time[3:5]
+    am_pm = time[6:8]
+    if not hour == '12' and am_pm == 'PM':
+        hour = str(int(hour)+12)
+    elif hour == '12' and am_pm == 'AM':
+        hour='00'
+    return str(hour) + ":" + minute
+
+
 ####
 #
 #   Initialize session variables 
@@ -324,8 +337,8 @@ def init_session_values():
         tomorrow.format("MM/DD/YYYY"),
         nextweek.format("MM/DD/YYYY"))
     # Default time span each day, 8 to 5
-    flask.session["begin_time"] = interpret_time("9am")
-    flask.session["end_time"] = interpret_time("5pm")
+    flask.session["begin_time"] = "09:00 AM"
+    flask.session["end_time"] = "05:00 PM"
 
 def interpret_time( text ):
     """
