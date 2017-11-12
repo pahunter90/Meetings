@@ -119,6 +119,8 @@ def get_dateTime_list():
     b_hour, b_minute, e_hour, e_minute = get_flask_times()
     start_day = arrow.get(flask.session['begin_date'])
     end_day = arrow.get(flask.session['end_date']).ceil('day')
+    start_day = start_day.replace(tzinfo='US/Pacific')
+    end_day = end_day.replace(tzinfo='US/Pacific')
     
     #Set the first time range
     start_time = start_day.replace(hour=b_hour, minute=b_minute)
@@ -134,6 +136,8 @@ def get_dateTime_list():
         day_ranges.append((start_time, end_time))
         start_time = start_time.shift(days=+1)
         end_time = end_time.shift(days=+1)
+    for day_range in day_ranges:
+        print(day_range)
     return day_ranges
 
 def get_flask_times():
