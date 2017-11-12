@@ -1,55 +1,25 @@
-# proj6-Gcal
-Snarf appointment data from a selection of a user's Google calendars 
+Program 7
 
-## What is here
+Authors: M Young and P Hunter
 
-I've provided code for the authorization (oauth2) protocol for Google
-calendars.  There is also a picker for a date range. 
+Uses: Lists all "busy" events from a google calendar in a specified date and time range.
+Note: The specified time range is for each day.
+      If the user wants all events in one day then use 12:00 AM to 12:00 AM
+      which will pick up all events on all days in the given range, so long as said
+      events are marked as busy times.
 
-## What you'll add
+Date Range: From MM/DD/YYYY to MM/DD/YYYY
+Time Range: From HH:MM AA to HH:MM PP
+            5 minute increments only: I.e.: 11:55 PM allowed, 11:56 PM not allowed.
+            Must specify AM or PM
 
-You'll need to read the Google developer documentation to learn how to
-obtain information from the Google Calendar service.
-
-Your application should allow the user to choose calendars (a single
-user may have several Google calendars, one of which is the 'primary'
-calendar) and list 'blocking'  (non-transparent)
-appointments between a start date and an end date
-for some subset of them.
-
-## Hints
-
-You'll need a 'client secret' file of your own.  It should *not* be
-under GIT control.  This is kind of a
-developer key, which you need to obtain from Google.  See
-https://auth0.com/docs/connections/social/google and
-https://developers.google.com/identity/protocols/OAuth2 .
-The applicable scenario for us is 'Web server applications'  (since
-we're doing this in Flask).  
-
-Your client secret will have to be registered for the URLs used for 
-the oauth2 'callback' in the authorization protocol.  This URL includes
-the port on which your application is running, so you you will need to 
-use the same port each time you run your application. You can register 
-the same key for multiple URLs, so for example I have registered mine
-for localhost:5000/oauth2callback, localhost:8000/oauth2callback, 
-roethke.d.cs.uoregon.edu:5000/oauth2callback, and 
-roethke.d.cs.uoregon.edu:8000/oauth2callback. (Roethke is my raspberry Pi
-at school.)  When we test your code, our grader and I will use our own 
-admin_secrets.py and google credentials files, but we will use your 
-client_secrets.py file.  As in the last project, your client_secrets.py
-file should include a reference to your repository and to your name, 
-so that our friendly (but clumsy) robots can use it to install your code. 
-
-I have noticed that getting the list of calendars from Google is very very 
-slow when running on my laptop at home, and snappier when accessing through
-roethke.  I suspect that is because roethke.d.cs.uoregon.edu is is 
-a routable IP address, while "localhost" on my home network requires some
-behind-the-curtains magic from my home router.  I don't know that for sure. 
-
-Whether or not you already have a Google calendar, it's a good idea to
-create one or two 'test' calendars with a known set of appointments
-for testing.
-
-
-
+Oddities: 
+  -  If the first specified time is greater than the second time then assumes the user means
+     for the time to extend into the next day.
+     Example:
+        Date Range: 1/1/2017 to 1/3/2017
+        Time Range: 11:00 PM to 1:00 AM
+        The application will produce all busy events in the given ranges:
+            1/1/2017 11:00 PM to 1/2/2017 1:00 AM
+            1/2/2017 11:00 PM to 1/3/2017 1:00 AM
+            1/3/2017 11:00 PM to 1/4/2017 1:00 AM  <-- Bleeds over into the next day
