@@ -75,40 +75,64 @@ def choose():
 def show_events():
     ## For each calendar, print the events in date and time order
     app.logger.debug("Finding Events for each Calendar")
+
+    ## Make sure we still have access to the account
     app.logger.debug("Checking credentials for Google calendar access")
     credentials = valid_credentials()
     if not credentials:
       app.logger.debug("Redirecting to authorization")
       return flask.redirect(flask.url_for('oauth2callback'))
     service = get_gcal_service(credentials)
+
+    # Get the list of calendars to include from the html form
     calendars = flask.request.form.getlist('include')
     
-    # Returns a list of dateTime ranges to look through
+    # Returns a list of dateTime ranges to look through for overlap
     day_ranges = get_dateTime_list()
     
     events = []
     flask.g.events = []
     for calendar in calendars:
+        # Calls a function that returns a list of events
         list_events = get_events(calendar, service)['items']
         for i in range(len(list_events)):
             transparent = True
+            # Check if event is marked as available
             if 'transparency' not in list_events[i]:
                 transparent = False
             elif list_events[i]['transparency'] == 'opaque':
                 transparent = False
+
+            # Only do this if 'busy' event
             if not transparent:
-                event_start_time = arrow.get(list_events[i]['start']['dateTime'])
-                event_end_time = arrow.get(list_events[i]['end']['dateTime'])
+                # 'date' only there if all day event
+                if 'date' in list_events[i]['start']:
+                    # all day event
+                    event_start_time = arrow.get(list_events[i]['start']['date']).floor('day')
+                    event_end_time = arrow.get(list_events[i]['start']['date']).ceil('day')
+                else:
+                    # normal event
+                    event_start_time = arrow.get(list_events[i]['start']['dateTime'])
+                    event_end_time = arrow.get(list_events[i]['end']['dateTime'])
                 for date_range in day_ranges:
+                    # Check if any part of an event overlaps
+                    # Note: date/time range is not inclusive (using strict inequalities)
                     if date_range[0] < event_start_time < date_range[1] or \
                        date_range[0] < event_end_time < date_range[1] or \
                        (date_range[0] >= event_start_time and date_range[1] <= event_end_time):
+                        
+                        # make sure it's not being added twice
                         if list_events[i] in events:
                             continue
                         else:
                             events.append(list_events[i])
+
+    # call a function that sorts the entire list of events by start date and time
+    # and returns a printable string for the html page
     events = sort_events(events)
     flask.g.events = events
+    # render a new html page "show_events" that lists the events in order
+    # I did this instead of rendering on the index page. I thought it was cleaner
     return render_template('show_events.html')
 
 def get_dateTime_list():
@@ -217,14 +241,21 @@ def get_gcal_service(credentials):
 
 
 def sort_events(events):
+    """
+    Sort events using a priority queue
+    """
     H = []
     for i in range(len(events)):
         event = events[i]
-        if event:
+        if 'date' in event['start']:
+            E = (arrow.get(event['start']['date']).floor('day'),
+                 arrow.get(event['start']['date']).ceil('day'),
+                 event['summary'])
+        else:
             E = (arrow.get(event['start']['dateTime']),
                  arrow.get(event['end']['dateTime']),
                  event['summary'])
-            heapq.heappush(H, E)
+        heapq.heappush(H, E)
     events = []
     while H:
         event = heapq.heappop(H)
