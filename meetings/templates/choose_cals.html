@@ -1,0 +1,56 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html lang="en"> <head>
+<title>Create Meeting</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" type="text/css"
+     href="//cdn.jsdelivr.net/bootstrap/latest/css/bootstrap.css"
+/>
+
+
+<link rel="stylesheet" type="text/css"
+    href="/static/css/busy.css"
+/>
+
+<!-- jquery from a content distribution network; probably cached -->
+<script type="text/javascript"
+     src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js">
+</script>
+</head>
+
+<body>
+<div class="container">
+
+
+{% with messages = get_flashed_messages() %}
+  {% if messages %}
+    <ul class=flashes>
+    {% for message in messages %}
+      <li>{{ message }}</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+{% endwith %}
+
+
+<!--
+Show the calendar list (if we have it).  This will need to be turned into
+a form from which calendars can be picked. Up to three entries are
+shown in each row (but the order is across then down; I would
+prefer down then across).
+-->
+{% if g.calendars is defined  %}
+<form method="post" action="/choose_events">
+<br />
+  <h2>Choose Calendars to Include</h2>
+    {% for cal in g.calendars if cal.selected %}
+      <input type="checkbox" id="{{ cal.id }}" name="include" value="{{ cal.id }}">
+      <label for="{{ cal.id }}">{{ cal.summary }}</label>
+      <br />
+    {% endfor %}
+  <input type="submit" value="Include Checked Calendars">
+</form>
+{% endif %}
+
+  </div>  <!-- container (for bootstrap) -->
+  </body> </html>

@@ -4,6 +4,8 @@ from flask import request
 from flask import url_for
 import uuid
 import heapq
+from available import Available
+from event import Event
 
 import json
 import logging
@@ -38,6 +40,7 @@ app.secret_key=CONFIG.SECRET_KEY
 SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 CLIENT_SECRET_FILE = CONFIG.GOOGLE_KEY_FILE  ## You'll need this
 APPLICATION_NAME = 'MeetMe class project'
+EVENTS = [] #Global container to hold events, eventually will be Database
 
 #############################
 #
@@ -68,11 +71,12 @@ def choose():
     service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
     flask.g.calendars = list_calendars(service)
-    return render_template('index.html')
+    return render_template('choose_cals.html')
 
 
-@app.route("/show_events", methods=['POST'])
-def show_events():
+@app.route("/choose_events", methods=['POST'])
+def choose_events():
+    global EVENTS
     ## For each calendar, print the events in date and time order
     app.logger.debug("Finding Events for each Calendar")
 
@@ -89,12 +93,18 @@ def show_events():
     
     # Returns a list of dateTime ranges to look through for overlap
     day_ranges = get_dateTime_list()
+   
+    time_min = arrow.get(flask.session['begin_date']).floor('day')
+    time_max = arrow.get(flask.session['end_date']).ceil('day')
     
-    events = []
+    EVENTS = [] 
     flask.g.events = []
     for calendar in calendars:
         # Calls a function that returns a list of events
-        list_events = get_events(calendar, service)['items']
+        calendar = service.calendars().get(calendarId=calendar).execute()
+        list_events = service.events().list(calendarId=calendar['id'],
+                                            singleEvents=True,
+                                            timeMin=time_min, timeMax=time_max).execute()['items']
         for i in range(len(list_events)):
             transparent = True
             # Check if event is marked as available
@@ -122,18 +132,66 @@ def show_events():
                        (date_range[0] >= event_start_time and date_range[1] <= event_end_time):
                         
                         # make sure it's not being added twice
-                        if list_events[i] in events:
+                        if list_events[i] in EVENTS:
                             continue
                         else:
-                            events.append(list_events[i])
+                            EVENTS.append(list_events[i])
 
     # call a function that sorts the entire list of events by start date and time
     # and returns a printable string for the html page
-    events = sort_events(events)
-    flask.g.events = events
+    sort_events()
+    flask.g.events = EVENTS
+    
     # render a new html page "show_events" that lists the events in order
     # I did this instead of rendering on the index page. I thought it was cleaner
-    return render_template('show_events.html')
+    return render_template('choose_events.html')
+
+
+@app.route("/show_available", methods=['POST'])
+def show_available():
+    """
+    Shows times the user is available within the given date time range
+    """
+    global EVENTS
+    ## Make sure we still have access to the account
+    app.logger.debug("Checking credentials for Google calendar access")
+    credentials = valid_credentials()
+    if not credentials:
+      app.logger.debug("Redirecting to authorization")
+      return flask.redirect(flask.url_for('oauth2callback'))
+    service = get_gcal_service(credentials)
+
+    flask.g.available = []
+    A = Available(flask.session['begin_date'], flask.session['end_date'],
+                  get_flask_times())
+
+    ignore_events = flask.request.form.getlist('ignore')
+    for event in EVENTS:
+        if not event.id in ignore_events:
+            for i in range(len(A.time)):
+                if event.start <= A.time[i] < event.end:
+                    A.available[i] = False
+    i = 0
+    started = False
+    while i < len(A.time):
+        if i == len(A.time)-1:
+            if started:
+                end_range = A.time[i]
+                started = False
+                flask.g.available.append([start_range.format("MM-DD: hh:mma"), end_range.format("MM-DD: hh:mma")])
+        else:
+            if not started:
+                if A.time[i].shift(minutes=+15) == A.time[i+1] and A.available[i]:
+                    start_range = A.time[i]
+                    started = True
+            else:
+                if not A.time[i].shift(minutes=+15) == A.time[i+1] or not A.available[i]:
+                    end_range = A.time[i]
+                    started = False
+                    flask.g.available.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
+        i+=1
+    return render_template('free_times.html')
+
 
 def get_dateTime_list():
     """
@@ -240,31 +298,25 @@ def get_gcal_service(credentials):
   return service
 
 
-def sort_events(events):
+def sort_events():
     """
     Sort events using a priority queue
     """
+    global EVENTS
     H = []
-    for i in range(len(events)):
-        event = events[i]
+    for event in EVENTS:
         if 'date' in event['start']:
-            E = (arrow.get(event['start']['date']).floor('day'),
+            E = Event(arrow.get(event['start']['date']).floor('day'),
                  arrow.get(event['start']['date']).ceil('day'),
-                 event['summary'])
+                 event['summary'], event['id'])
         else:
-            E = (arrow.get(event['start']['dateTime']),
+            E = Event(arrow.get(event['start']['dateTime']),
                  arrow.get(event['end']['dateTime']),
-                 event['summary'])
+                 event['summary'], event['id'])
         heapq.heappush(H, E)
-    events = []
+    EVENTS = []
     while H:
-        event = heapq.heappop(H)
-        if event[0].date() == event[1].date():
-            date = event[0].format("MM-DD: hh:mma") + " to " + event[1].format("hh:mma")
-        else:
-            date = event[0].format("MM-DD: hh:mma") + " to " + event[1].format("MM-DD: hh:mma")
-        events.append((date, event[2]))
-    return events
+        EVENTS.append(heapq.heappop(H))
 
 @app.route('/oauth2callback')
 def oauth2callback():
@@ -463,22 +515,6 @@ def list_calendars(service):
             })
     return sorted(result, key=cal_sort_key)
 
-def get_events(calendar, service):
-    """
-    Given a calendar in a list of calendars
-    return a list of events from that calendar
-    calendar is the calender description
-    """
-    calendar_list = list_calendars(service)
-    for cal in calendar_list:
-        if cal['summary'] == calendar:
-            event_calendar = cal
-    time_min = arrow.get(flask.session['begin_date']).floor('day')
-    time_max = arrow.get(flask.session['end_date']).ceil('day')
-    return service.events().list(calendarId=event_calendar['id'], 
-                                 singleEvents=True,
-                                 timeMin=time_min, 
-                                 timeMax=time_max).execute() 
 
 def cal_sort_key( cal ):
     """

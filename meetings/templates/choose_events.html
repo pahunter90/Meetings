@@ -38,14 +38,20 @@
   {% endif %}
 {% endwith %}
 
-<h1>Events</h1>
-
 {% if g.events is defined %}
+<form method="post" action="/show_available">
+<br />
+  <h2>Choose Events to Ignore</h2>
   {% for event in g.events %}
   <div>
-    {{ event[1] }} <br /> {{ event[0] }} <br /><br />
+    <input type="checkbox" id="{{ event.id }}" value="{{ event.id }}" name="ignore">
+    <label for="{{ event.id }}" style="vertical-align: top">{{ event.summary }}<br />{{ event.dt_string }}</label>
+    <br />
+    <br />
   </div>
   {% endfor %}
+  <input type="submit" value="Ignore Checked Events">
+</form>
 {% endif %}
 </div>
 </body>
