@@ -1,8 +1,10 @@
-Program 7
+Program 8
 
 Authors: M Young and P Hunter
 
-Uses: Lists all "busy" events from a google calendar in a specified date and time range.
+Second iteration of the CIS 322 final project
+
+Uses: Lists all available time in given day and time ranges using events from Google calendars.
 Note: The specified time range is for each day.
       If the user wants all events in one day then use 12:00 AM to 12:00 AM
       which will pick up all events on all days in the given range, so long as said
@@ -10,7 +12,7 @@ Note: The specified time range is for each day.
 
 Date Range: From MM/DD/YYYY to MM/DD/YYYY
 Time Range: From HH:MM AA to HH:MM PP
-            5 minute increments only: I.e.: 11:55 PM allowed, 11:56 PM not allowed.
+            15 minute increments only: I.e.: 11:45 PM allowed, 11:56 PM not allowed.
             Must specify AM or PM
 
 Oddities: 
