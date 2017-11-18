@@ -9,9 +9,9 @@ class Available:
         """
         self.time = []
         self.available = []
-        start_date_time = arrow.get(start_date).floor('day').to('local')
-        end_date_time = arrow.get(start_date).floor('day').to('local')
-        last_date_time = arrow.get(end_date).floor('day').to('local')
+        start_date_time = arrow.get(start_date).floor('day').replace(tzinfo='US/Pacific')
+        end_date_time = arrow.get(start_date).floor('day').replace(tzinfo='US/Pacific')
+        last_date_time = arrow.get(end_date).floor('day').replace(tzinfo='US/Pacific')
         start_hour = times[0]
         start_minute = times[1]
         end_hour = times[2]
