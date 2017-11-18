@@ -19,9 +19,11 @@ class Available:
         start_date_time = start_date_time.replace(hour=start_hour, minute=start_minute)
         end_date_time = end_date_time.replace(hour=end_hour, minute=end_minute)
         last_date_time = last_date_time.replace(hour=end_hour, minute=end_minute)
+        wrap_around = False
         if start_date_time >= end_date_time:
             end_date_time = end_date_time.shift(days=+1)
             last_date_time = last_date_time.shift(days=+1)
+            wrap_around = True
         while end_date_time <= last_date_time:
             while start_date_time < end_date_time:
                 if not start_date_time in self.time:
@@ -29,7 +31,7 @@ class Available:
                     self.available.append(True)
                 start_date_time = start_date_time.shift(minutes=+15)
             start_date_time = start_date_time.replace(hour=start_hour, minute=start_minute)
-            if not start_date_time == end_date_time:
+            if not wrap_around:
                 start_date_time = start_date_time.shift(days=+1)
             if not end_date_time in self.time:
                 self.time.append(end_date_time)

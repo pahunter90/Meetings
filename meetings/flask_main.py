@@ -178,7 +178,7 @@ def show_available():
             if started:
                 end_range = A.time[i]
                 started = False
-                flask.g.available.append([start_range.format("MM-DD: hh:mma"), end_range.format("MM-DD: hh:mma")])
+                flask.g.available.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
         else:
             if not started:
                 if A.time[i].shift(minutes=+15) == A.time[i+1] and A.available[i]:
