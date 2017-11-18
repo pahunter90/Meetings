@@ -16,10 +16,12 @@ class Event:
             self.dt_string = start_date_time.format("MM-DD: hh:mma") + " to " + end_date_time.format("MM:DD: hh:mma")
 
     def __lt__(self, other):
+        if self.start == other.start:
+            return self.end < other.end
         return self.start < other.start
 
     def __eq__(self, other):
-        return self.start == other.start
+        return self.start == other.start and self.end == other.end
 
     def __gt__(self, other):
         return other.__lt__(self)
