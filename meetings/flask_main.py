@@ -40,6 +40,7 @@ app.secret_key=CONFIG.SECRET_KEY
 SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 CLIENT_SECRET_FILE = CONFIG.GOOGLE_KEY_FILE  ## You'll need this
 APPLICATION_NAME = 'MeetMe class project'
+CALENDARS = [] #Global container to hold calendars, eventually will be Database
 EVENTS = [] #Global container to hold events, eventually will be Database
 
 #############################
@@ -58,6 +59,7 @@ def index():
 
 @app.route("/choose")
 def choose():
+    global CALENDARS
     ## We'll need authorization to list calendars 
     ## I wanted to put what follows into a function, but had
     ## to pull it back here because the redirect has to be a
@@ -70,12 +72,14 @@ def choose():
 
     service = get_gcal_service(credentials)
     app.logger.debug("Returned from get_gcal_service")
+    CALENDARS = []
     flask.g.calendars = list_calendars(service)
     return render_template('choose_cals.html')
 
 
-@app.route("/choose_events", methods=['POST'])
+@app.route("/choose_events", methods=['GET', 'POST'])
 def choose_events():
+    global CALENDARS
     global EVENTS
     ## For each calendar, print the events in date and time order
     app.logger.debug("Finding Events for each Calendar")
@@ -89,7 +93,8 @@ def choose_events():
     service = get_gcal_service(credentials)
 
     # Get the list of calendars to include from the html form
-    calendars = flask.request.form.getlist('include')
+    if CALENDARS == []:
+        CALENDARS = flask.request.form.getlist('include')
     
     # Returns a list of dateTime ranges to look through for overlap
     day_ranges = get_dateTime_list()
@@ -99,7 +104,7 @@ def choose_events():
     
     EVENTS = [] 
     flask.g.events = []
-    for calendar in calendars:
+    for calendar in CALENDARS:
         # Calls a function that returns a list of events
         calendar = service.calendars().get(calendarId=calendar).execute()
         list_events = service.events().list(calendarId=calendar['id'],
