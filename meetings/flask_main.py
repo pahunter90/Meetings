@@ -155,6 +155,7 @@ def add_people():
     so they can add their availablility
     """
     admin_email = request.form.get('email')
+    flask.session['login_email'] = admin_email
     daterange = request.form.get('daterange')
     begin_time = to_24(request.form.get('earliest'))
     end_time = to_24(request.form.get('latest'))
@@ -195,11 +196,10 @@ def add_person():
     email = flask.request.args.get("email", type=str)
     code = flask.session['meeting_code']
     meeting = meetings.find_one({'code': code})
-    users = meeting['users']
-    if not email in users:
-        A = Available(to_arrow(meeting['begin_date']), to_arrow(meeting['end_date']),
-                  meeting['begin_time'], meeting['end_time'])
-        users.append({'email': email,
+    i = find_user_index(meeting, email)
+    if i == -1:
+        A = Available(to_arrow(meeting['begin_date']), to_arrow(meeting['end_date']), meeting['begin_time'], meeting['end_time'])
+        meeting['users'].append({'email': email,
                       'responded': False,
                       'times': A.to_iso(),
                       'avail': A.available})
