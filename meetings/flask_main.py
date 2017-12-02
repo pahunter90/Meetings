@@ -91,14 +91,12 @@ def index():
 # or create a meeting
 @app.route("/login")
 def login():
-    if 'login_email' in flask.session:
-        login_email = flask.session['login_email']
-    else:
+    if len(flask.request.args) == 2:
         login_email = flask.request.args.get('email')
-    if 'meeting_code' in flask.session:
-        meeting_code = int(flask.session['meeting_code'])
-    else:
         meeting_code = int(flask.request.args.get('code'))
+    else:
+        login_email = flask.session['login_email']
+        meeting_code = int(flask.session['meeting_code'])
     meeting = meetings.find_one({'code': meeting_code})
 
     # No Meeting Exists
@@ -309,10 +307,8 @@ def show_available():
         meeting['users'][i]['avail'] = A.available
         meeting['users'][i]['responded'] = False
 
-    print(len(events))
     for event in events:
         event = eval(event)
-        print(event['id'])
         if 'date' in event['start']:
             # all day event
             event_start_time = to_arrow(event['start']['date']).floor('day')
@@ -323,7 +319,6 @@ def show_available():
             event_end_time = to_arrow(event['end']['dateTime'])
  
         if not event['id'] in ignore_events:
-            print("Checking event from: ", event_start_time, " to ", event_end_time)
             for j in range(len(meeting['users'][i]['times'])):
                 if event_start_time <= to_arrow(meeting['users'][i]['times'][j]) < event_end_time:
                     meeting['users'][i]['avail'][j] = False
