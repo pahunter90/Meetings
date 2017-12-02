@@ -1,0 +1,79 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<html lang="en"> <head>
+<title>Create Meeting</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" type="text/css"
+     href="//cdn.jsdelivr.net/bootstrap/latest/css/bootstrap.css"
+/>
+
+
+<link rel="stylesheet" type="text/css"
+    href="/static/css/busy.css"
+/>
+
+<!-- jquery from a content distribution network; probably cached -->
+<script type="text/javascript"
+     src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.3/jquery.min.js">
+</script>
+
+<!-- Ideally the rest of our javascript dependencies would be
+     bundled and minified with 'browserify', but I've found that
+     it difficult to handle browserify dependencies for class
+     projects.  So, we'll pick up moment and a date range picker
+     from CDNs instead.
+-->
+
+<script type="text/javascript" src="//cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
+
+<script type="text/javascript" src="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.js"></script>
+<link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.css" />
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/timepicker/1.3.5/jquery.timepicker.min.js"></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/timepicker/1.3.5/jquery.timepicker.min.css">
+
+</head>
+
+<body>
+<div class="container">
+
+{% if g.available is defined and g.available!=None %}
+<h2>Your Available Time Ranges</h2>
+  {% for time_range in g.available %}
+  <div>
+    Available from {{ time_range[0] }} to {{ time_range[1] }}.
+    <br />
+  </div>
+  {% endfor %}
+{% else %}
+<h2> You have not yet set available time ranges, please set ranges below.</h2>
+{% endif %}
+<br />
+<div>
+  <input type="button" onclick="location.href='/choose';" value="Set Availablity" />
+</div>
+<br />
+{% if g.admin is defined and g.admin==True %}
+<div>
+  <h4>Meeting code is <strong>{{ g.code }}</strong>, give this to attendees. You will need it to access the meeting, so write it down.</h4>
+<br />
+  <h4>Available Times</h4>
+  {% for time_range in g.available_times %}
+    Acceptable Meeting Time: {{ time_range[0] }} to {{ time_range[1] }}.<br />
+  {% endfor %}
+<br />
+{% if g.not_responded[0] %}
+  <h4>Not Yet Responded:</h4>
+  {% for email in g.not_responded %}
+    {{ email }}, 
+  {% endfor %}
+{% endif %}
+  <br /> <br />
+  <input type="button" onclick="location.href='/_delete';" value="Cancel Meeting" />
+  <br />
+  <strong>Note: This cannot be undone!</strong>
+</div>
+{% endif %}
+</div>
+</body>
+</html>

@@ -6,6 +6,7 @@ import uuid
 import heapq
 from available import Available
 from event import Event
+import random
 
 import json
 import logging
@@ -15,6 +16,9 @@ import arrow # Replacement for datetime, based on moment.js
 # import datetime # But we still need time
 from dateutil import tz  # For interpreting local times
 
+# Mongo database
+import pymongo
+from pymongo import MongoClient
 
 # OAuth2  - Google library implementation for convenience
 from oauth2client import client
@@ -37,11 +41,32 @@ app.debug=CONFIG.DEBUG
 app.logger.setLevel(logging.DEBUG)
 app.secret_key=CONFIG.SECRET_KEY
 
+
+MONGO_CLIENT_URL = "mongodb://{}:{}@{}:{}/{}".format(
+    CONFIG.ADMIN_USER,
+    CONFIG.ADMIN_PW,
+    CONFIG.DB_HOST, 
+    CONFIG.DB_PORT, 
+    CONFIG.DB)
+
+
+
+####
+# Database connection per server process
+###
+
+try: 
+    dbclient = MongoClient(MONGO_CLIENT_URL)
+    db = getattr(dbclient, CONFIG.DB)
+    meetings = db.meetings
+
+except:
+    print("Failure opening database.  Is Mongo running? Correct password?")
+    sys.exit(1)
+
 SCOPES = 'https://www.googleapis.com/auth/calendar.readonly'
 CLIENT_SECRET_FILE = CONFIG.GOOGLE_KEY_FILE  ## You'll need this
 APPLICATION_NAME = 'MeetMe class project'
-CALENDARS = [] #Global container to hold calendars, eventually will be Database
-EVENTS = [] #Global container to hold events, eventually will be Database
 
 #############################
 #
@@ -49,17 +74,125 @@ EVENTS = [] #Global container to hold events, eventually will be Database
 #
 #############################
 
+#Index asks the user for their email address to login
+#this would also include a password in a more perfect world
 @app.route("/")
 @app.route("/index")
 def index():
-  app.logger.debug("Entering index")
-  if 'begin_date' not in flask.session:
-    init_session_values()
-  return render_template('index.html')
+    app.logger.debug("Entering index")
+    if 'begin_date' not in flask.session:
+        init_session_values()
+    return render_template('index.html')
+
+
+# After the user logs in force authentication through Google
+# then show them their busy times if any
+# and give them the option to edit busy times (if in a meeting)
+# or create a meeting
+@app.route("/login")
+def login():
+    if 'login_email' in flask.session:
+        login_email = flask.session['login_email']
+    else:
+        login_email = flask.request.args.get('email')
+    if 'meeting_code' in flask.session:
+        meeting_code = int(flask.session['meeting_code'])
+    else:
+        meeting_code = int(flask.request.args.get('code'))
+    meeting = meetings.find_one({'code': meeting_code})
+
+    # No Meeting Exists
+    if meeting is None:
+        flask.flash('Invalid Meeting Code')
+        return render_template('index.html')
+
+    i = find_user_index(meeting, login_email) # -1 if not there
+    
+    # If not invited
+    if i == -1:
+        flask.flash('That email is not invited to that meeting')
+        return render_template('index.html') 
+    
+    # Check for availablity
+    if meeting['users'][i]['responded']:
+        flask.g.available = find_availability(meeting, login_email)
+
+    # Check for admin status
+    if meeting['admin'] == login_email:
+        flask.g.admin = True
+        flask.g.available_times, flask.g.not_responded = meeting_availability(meeting)
+        flask.g.code = meeting_code
+    flask.session['login_email'] = login_email
+    flask.session['meeting_code'] = meeting_code
+    return render_template('login_page.html')
+
+
+@app.route("/_delete")
+def delete():
+    meetings.remove({'code': int(flask.session['meeting_code'])})
+    return flask.redirect(flask.url_for('index'))
+
+@app.route("/create_meeting")
+def create_meeting():
+    return render_template('create_meeting.html') 
+
+@app.route("/add_people", methods=['POST'])
+def add_people():
+    admin_email = request.form.get('email')
+    daterange = request.form.get('daterange')
+    begin_time = to_24(request.form.get('earliest'))
+    end_time = to_24(request.form.get('latest'))
+    daterange = daterange
+    daterange_parts = daterange.split()
+    begin_date = interpret_date(daterange_parts[0])
+    end_date = interpret_date(daterange_parts[2])
+    app.logger.debug("Setrange parsed {} - {}  dates as {} - {}".format(
+                     daterange_parts[0], daterange_parts[1], 
+                     begin_date, end_date))
+    duration = request.form.get('duration')
+    # Give a meeting code to this meeting
+    meeting_code = random.randint(100000,999999)
+    meeting = meetings.find_one({'code': meeting_code})
+    # Make sure the code is unique
+    while not meeting is None:
+        meeting_code = random.randint(100000,999999)
+        meeting = meetings.find_one({'code': meeting_code})
+    A = Available(begin_date, end_date, begin_time, end_time)
+    flask.session['meeting_code'] = meeting_code
+    user = [{'email': admin_email, 'responded': False, 'times': A.to_iso(), 'avail': A.available}]
+    meetings.insert({'code': meeting_code,
+                     'admin': admin_email,
+                     'begin_date': begin_date,
+                     'end_date': end_date,
+                     'begin_time': begin_time,
+                     'end_time': end_time,
+                     'duration': duration,
+                     'users': user})
+    return render_template('add_people.html')
+
+
+@app.route("/_add_person")
+def add_person():
+    email = flask.request.args.get("email", type=str)
+    code = flask.session['meeting_code']
+    meeting = meetings.find_one({'code': code})
+    users = meeting['users']
+    if not email in users:
+        A = Available(to_arrow(meeting['begin_date']), to_arrow(meeting['end_date']),
+                  meeting['begin_time'], meeting['end_time'])
+        users.append({'email': email,
+                      'responded': False,
+                      'times': A.to_iso(),
+                      'avail': A.available})
+        meetings.save(meeting)
+        rslt = {"success": True}
+    else:
+        rslt = {"success": False}
+    return flask.jsonify(result=rslt)
+
 
 @app.route("/choose")
 def choose():
-    global CALENDARS
     ## We'll need authorization to list calendars 
     ## I wanted to put what follows into a function, but had
     ## to pull it back here because the redirect has to be a
@@ -67,44 +200,39 @@ def choose():
     app.logger.debug("Checking credentials for Google calendar access")
     credentials = valid_credentials()
     if not credentials:
-      app.logger.debug("Redirecting to authorization")
-      return flask.redirect(flask.url_for('oauth2callback'))
+        app.logger.debug("Redirecting to authorization")
+        return flask.redirect(flask.url_for('oauth2callback'))
 
     service = get_gcal_service(credentials)
+
     app.logger.debug("Returned from get_gcal_service")
-    CALENDARS = []
     flask.g.calendars = list_calendars(service)
     return render_template('choose_cals.html')
 
 
 @app.route("/choose_events", methods=['GET', 'POST'])
 def choose_events():
-    global CALENDARS
-    global EVENTS
     ## For each calendar, print the events in date and time order
     app.logger.debug("Finding Events for each Calendar")
 
-    ## Make sure we still have access to the account
     app.logger.debug("Checking credentials for Google calendar access")
     credentials = valid_credentials()
     if not credentials:
-      app.logger.debug("Redirecting to authorization")
-      return flask.redirect(flask.url_for('oauth2callback'))
+        app.logger.debug("Redirecting to authorization")
+        return flask.redirect(flask.url_for('oauth2callback'))
+
     service = get_gcal_service(credentials)
 
-    # Get the list of calendars to include from the html form
-    if CALENDARS == []:
-        CALENDARS = flask.request.form.getlist('include')
-    
-    # Returns a list of dateTime ranges to look through for overlap
-    day_ranges = get_dateTime_list()
    
-    time_min = arrow.get(flask.session['begin_date']).floor('day')
-    time_max = arrow.get(flask.session['end_date']).ceil('day')
-    
-    EVENTS = [] 
-    flask.g.events = []
-    for calendar in CALENDARS:
+    calendars = flask.request.form.getlist('include')
+
+    day_ranges = get_dateTime_list()
+
+    time_min = day_ranges[0][0].floor('day')
+    time_max = day_ranges[len(day_ranges)-1][1].ceil('day')
+
+    events = []
+    for calendar in calendars:
         # Calls a function that returns a list of events
         calendar = service.calendars().get(calendarId=calendar).execute()
         list_events = service.events().list(calendarId=calendar['id'],
@@ -123,12 +251,12 @@ def choose_events():
                 # 'date' only there if all day event
                 if 'date' in list_events[i]['start']:
                     # all day event
-                    event_start_time = arrow.get(list_events[i]['start']['date']).floor('day')
-                    event_end_time = arrow.get(list_events[i]['start']['date']).ceil('day')
+                    event_start_time = to_arrow(list_events[i]['start']['date']).floor('day')
+                    event_end_time = to_arrow(list_events[i]['start']['date']).ceil('day')
                 else:
                     # normal event
-                    event_start_time = arrow.get(list_events[i]['start']['dateTime'])
-                    event_end_time = arrow.get(list_events[i]['end']['dateTime'])
+                    event_start_time = to_arrow(list_events[i]['start']['dateTime'])
+                    event_end_time = to_arrow(list_events[i]['end']['dateTime'])
                 for date_range in day_ranges:
                     # Check if any part of an event overlaps
                     # Note: date/time range is not inclusive (using strict inequalities)
@@ -137,15 +265,16 @@ def choose_events():
                        (date_range[0] >= event_start_time and date_range[1] <= event_end_time):
                         
                         # make sure it's not being added twice
-                        if list_events[i] in EVENTS:
+                        if list_events[i] in events:
                             continue
                         else:
-                            EVENTS.append(list_events[i])
+                            events.append(list_events[i])
 
     # call a function that sorts the entire list of events by start date and time
     # and returns a printable string for the html page
-    sort_events()
-    flask.g.events = EVENTS
+    flask.g.events_list = events
+    flask.g.events = sort_events(events)
+
     
     # render a new html page "show_events" that lists the events in order
     # I did this instead of rendering on the index page. I thought it was cleaner
@@ -157,25 +286,79 @@ def show_available():
     """
     Shows times the user is available within the given date time range
     """
-    global EVENTS
-    ## Make sure we still have access to the account
     app.logger.debug("Checking credentials for Google calendar access")
     credentials = valid_credentials()
     if not credentials:
-      app.logger.debug("Redirecting to authorization")
-      return flask.redirect(flask.url_for('oauth2callback'))
+        app.logger.debug("Redirecting to authorization")
+        return flask.redirect(flask.url_for('oauth2callback'))
+
     service = get_gcal_service(credentials)
 
+    events = flask.request.form.getlist('events')
+    
     flask.g.available = []
-    A = Available(flask.session['begin_date'], flask.session['end_date'],
-                  get_flask_times())
+    meeting = meetings.find_one({'code': flask.session['meeting_code']})
 
     ignore_events = flask.request.form.getlist('ignore')
-    for event in EVENTS:
-        if not event.id in ignore_events:
-            for i in range(len(A.time)):
-                if event.start <= A.time[i] < event.end:
-                    A.available[i] = False
+    
+    i = find_user_index(meeting, flask.session['login_email'])
+    if meeting['users'][i]['responded'] == True:
+        A = Available(to_arrow(meeting['begin_date']), to_arrow(meeting['end_date']),
+                      meeting['begin_time'], meeting['end_time'])
+        meeting['users'][i]['times'] = A.to_iso()
+        meeting['users'][i]['avail'] = A.available
+        meeting['users'][i]['responded'] = False
+
+    print(len(events))
+    for event in events:
+        event = eval(event)
+        print(event['id'])
+        if 'date' in event['start']:
+            # all day event
+            event_start_time = to_arrow(event['start']['date']).floor('day')
+            event_end_time = to_arrow(event['start']['date']).ceil('day')
+        else:
+            # normal event
+            event_start_time = to_arrow(event['start']['dateTime'])
+            event_end_time = to_arrow(event['end']['dateTime'])
+ 
+        if not event['id'] in ignore_events:
+            print("Checking event from: ", event_start_time, " to ", event_end_time)
+            for j in range(len(meeting['users'][i]['times'])):
+                if event_start_time <= to_arrow(meeting['users'][i]['times'][j]) < event_end_time:
+                    meeting['users'][i]['avail'][j] = False
+    meeting['users'][i]['responded'] = True
+    meetings.save(meeting)
+    flask.g.available = find_availability(meeting, flask.session['login_email'])
+    return flask.redirect(flask.url_for('login'))
+
+def to_arrow(time):
+    return arrow.get(time).replace(tzinfo='US/Pacific')
+
+
+def find_user_index(meeting, email):
+    i=0
+    while meeting['users'][i]['email'] != email:
+        if i == len(meeting['users'])-1:
+            return -1
+        else:
+            i+=1
+    return i
+ 
+def meeting_availability(meeting):
+    A = Available(to_arrow(meeting['begin_date']), to_arrow(meeting['end_date']),
+                  meeting['begin_time'], meeting['end_time'])
+    printable_A = []
+    not_responded = []
+    duration = int(meeting['duration'])
+    for i in range(len(meeting['users'])):
+        if meeting['users'][i]['responded']:
+            for j in range(len(A.time)):
+                if not meeting['users'][i]['avail'][j]:
+                    A.available[j] = False
+        else:
+            not_responded.append(meeting['users'][i]['email'])
+    A.fixup(duration)
     i = 0
     started = False
     while i < len(A.time):
@@ -183,7 +366,7 @@ def show_available():
             if started:
                 end_range = A.time[i]
                 started = False
-                flask.g.available.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
+                printable_A.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
         else:
             if not started:
                 if A.time[i].shift(minutes=+15) == A.time[i+1] and A.available[i]:
@@ -193,9 +376,35 @@ def show_available():
                 if not A.time[i].shift(minutes=+15) == A.time[i+1] or not A.available[i]:
                     end_range = A.time[i]
                     started = False
-                    flask.g.available.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
+                    printable_A.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
         i+=1
-    return render_template('free_times.html')
+    return [printable_A, not_responded]
+
+
+
+def find_availability(meeting, email):
+    i = find_user_index(meeting, email)
+    availability = []
+    j = 0
+    started = False
+    while j < len(meeting['users'][i]['times']):
+        if j == len(meeting['users'][i]['times'])-1:
+            if started:
+                end_range = to_arrow(meeting['users'][i]['times'][j])
+                started = False
+                availability.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
+        else:
+            if not started:
+                if to_arrow(meeting['users'][i]['times'][j]).shift(minutes=+15) == to_arrow(meeting['users'][i]['times'][j+1]) and meeting['users'][i]['avail'][j]:
+                    start_range = to_arrow(meeting['users'][i]['times'][j])
+                    started = True
+            else:
+                if not to_arrow(meeting['users'][i]['times'][j]).shift(minutes=+15) == to_arrow(meeting['users'][i]['times'][j+1]) or not meeting['users'][i]['avail'][j]:
+                    end_range = to_arrow(meeting['users'][i]['times'][j])
+                    started = False
+                    availability.append([start_range.format("MM-DD: h:mma"), end_range.format("MM-DD: h:mma")])
+        j+=1
+    return availability
 
 
 def get_dateTime_list():
@@ -203,9 +412,11 @@ def get_dateTime_list():
     Returns a list of tuples that are start and end times for
     each acceptable chunk in the date range
     """
-    b_hour, b_minute, e_hour, e_minute = get_flask_times()
-    start_day = arrow.get(flask.session['begin_date'])
-    end_day = arrow.get(flask.session['end_date']).ceil('day')
+    code = flask.session['meeting_code']
+    meeting = meetings.find_one({'code': code})
+    b_hour, b_minute, e_hour, e_minute = get_flask_times(meeting)
+    start_day = to_arrow(meeting['begin_date'])
+    end_day = to_arrow(meeting['end_date']).ceil('day')
     start_day = start_day.replace(tzinfo='US/Pacific')
     end_day = end_day.replace(tzinfo='US/Pacific')
     
@@ -226,14 +437,14 @@ def get_dateTime_list():
         end_time = end_time.shift(days=+1)
     return day_ranges
 
-def get_flask_times():
+def get_flask_times(meeting):
     """
     Returns the integer versions of the time session objects as hour and minute
     """
-    b_hour = int(to_24(flask.session['begin_time'])[:2])
-    b_minute = int(to_24(flask.session['begin_time'])[-2:])
-    e_hour = int(to_24(flask.session['end_time'])[:2])
-    e_minute = int(to_24(flask.session['end_time'])[-2:])
+    b_hour = int(meeting['begin_time'][:2])
+    b_minute = int(meeting['begin_time'][-2:])
+    e_hour = int(meeting['end_time'][:2])
+    e_minute = int(meeting['end_time'][-2:])
     return [b_hour, b_minute, e_hour, e_minute]
 
 
@@ -303,25 +514,25 @@ def get_gcal_service(credentials):
   return service
 
 
-def sort_events():
+def sort_events(events):
     """
     Sort events using a priority queue
     """
-    global EVENTS
     H = []
-    for event in EVENTS:
+    for event in events:
         if 'date' in event['start']:
-            E = Event(arrow.get(event['start']['date']).floor('day'),
-                 arrow.get(event['start']['date']).ceil('day'),
+            E = Event(to_arrow(event['start']['date']).floor('day'),
+                 to_arrow(event['start']['date']).ceil('day'),
                  event['summary'], event['id'])
         else:
-            E = Event(arrow.get(event['start']['dateTime']),
-                 arrow.get(event['end']['dateTime']),
+            E = Event(to_arrow(event['start']['dateTime']),
+                 to_arrow(event['end']['dateTime']),
                  event['summary'], event['id'])
         heapq.heappush(H, E)
-    EVENTS = []
+    events = []
     while H:
-        EVENTS.append(heapq.heappop(H))
+        events.append(heapq.heappop(H))
+    return events
 
 @app.route('/oauth2callback')
 def oauth2callback():
@@ -362,7 +573,7 @@ def oauth2callback():
     ## but for the moment I'll just log it and go back to
     ## the main screen
     app.logger.debug("Got credentials")
-    return flask.redirect(flask.url_for('choose'))
+    return flask.redirect(flask.url_for('login'))
 
 #####
 #
@@ -375,24 +586,15 @@ def oauth2callback():
 #
 #####
 
-@app.route('/setrange', methods=['POST'])
 def setrange():
     """
     User chose a date range with the bootstrap daterange
     widget.
     """
     app.logger.debug("Entering setrange")  
-    daterange = request.form.get('daterange')
-    flask.session['begin_time'] = request.form.get('earliest')
-    flask.session['end_time'] = request.form.get('latest')
-    flask.session['daterange'] = daterange
-    daterange_parts = daterange.split()
-    flask.session['begin_date'] = interpret_date(daterange_parts[0])
-    flask.session['end_date'] = interpret_date(daterange_parts[2])
-    app.logger.debug("Setrange parsed {} - {}  dates as {} - {}".format(
-      daterange_parts[0], daterange_parts[1], 
-      flask.session['begin_date'], flask.session['end_date']))
-    return flask.redirect(flask.url_for("choose"))
+    return flask.redirect(flask.url_for("add_people"))
+
+
 
 
 #convert from 12hr to 24hr time
@@ -441,7 +643,7 @@ def interpret_time( text ):
     app.logger.debug("Decoding time '{}'".format(text))
     time_formats = ["ha", "h:mma",  "h:mm a", "H:mm"]
     try: 
-        as_arrow = arrow.get(text, time_formats).replace(tzinfo=tz.tzlocal())
+        as_arrow = to_arrow(text, time_formats).replace(tzinfo=tz.tzlocal())
         as_arrow = as_arrow.replace(year=2016) #HACK see below
         app.logger.debug("Succeeded interpreting time")
     except:
@@ -478,7 +680,7 @@ def next_day(isotext):
     """
     ISO date + 1 day (used in query to Google calendar)
     """
-    as_arrow = arrow.get(isotext)
+    as_arrow = to_arrow(isotext)
     return as_arrow.replace(days=+1).isoformat()
 
 ####
@@ -496,7 +698,7 @@ def list_calendars(service):
     Google Calendars web app) calendars before unselected calendars.
     """
     app.logger.debug("Entering list_calendars")  
-    calendar_list = service.calendarList().list().execute()["items"]
+    calendar_list = service.calendarList().list(showHidden=True).execute()["items"]
     result = [ ]
     for cal in calendar_list:
         kind = cal["kind"]
@@ -547,7 +749,7 @@ def cal_sort_key( cal ):
 @app.template_filter( 'fmtdate' )
 def format_arrow_date( date ):
     try: 
-        normal = arrow.get( date )
+        normal = to_arrow( date )
         return normal.format("ddd MM/DD/YYYY")
     except:
         return "(bad date)"
@@ -555,7 +757,7 @@ def format_arrow_date( date ):
 @app.template_filter( 'fmttime' )
 def format_arrow_time( time ):
     try:
-        normal = arrow.get( time )
+        normal = to_arrow( time )
         return normal.format("HH:mm")
     except:
         return "(bad time)"

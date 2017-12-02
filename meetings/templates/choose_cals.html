@@ -43,7 +43,7 @@ prefer down then across).
 <form method="post" action="/choose_events">
 <br />
   <h2>Choose Calendars to Include</h2>
-    {% for cal in g.calendars if cal.selected %}
+    {% for cal in g.calendars %}
       <input type="checkbox" id="{{ cal.id }}" name="include" value="{{ cal.id }}">
       <label for="{{ cal.id }}">{{ cal.summary }}</label>
       <br />

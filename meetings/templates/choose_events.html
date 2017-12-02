@@ -50,6 +50,9 @@
     <br />
   </div>
   {% endfor %}
+  {% for event in g.events_list %}
+    <input type="hidden" id="{{ event.id }}" name="events" value="{{ event }}" />
+  {% endfor %}
   <input type="submit" value="Ignore Checked Events">
 </form>
 {% endif %}
