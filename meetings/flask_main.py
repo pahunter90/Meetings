@@ -91,6 +91,13 @@ def index():
 # or create a meeting
 @app.route("/login")
 def login():
+    """
+    Login Page
+    
+    If there are arguments in the request then it may be a new user or a new meeting
+    so look those up, otherwise may be a returning user and try to use cookie values
+    Show all the necessary info for the meeting if the user is the meeting creator
+    """
     if len(flask.request.args) == 2:
         login_email = flask.request.args.get('email')
         meeting_code = int(flask.request.args.get('code'))
@@ -127,15 +134,26 @@ def login():
 
 @app.route("/_delete")
 def delete():
+    """
+    Deletes the current meeting
+    """
     meetings.remove({'code': int(flask.session['meeting_code'])})
     return flask.redirect(flask.url_for('index'))
 
 @app.route("/create_meeting")
 def create_meeting():
+    """
+    Starts the process for creating an event
+    """
     return render_template('create_meeting.html') 
 
 @app.route("/add_people", methods=['POST'])
 def add_people():
+    """
+    Adds the meeting to the database giving it a unique 6-digit code
+    Adds the admin user to the database both as admin and as a regular user
+    so they can add their availablility
+    """
     admin_email = request.form.get('email')
     daterange = request.form.get('daterange')
     begin_time = to_24(request.form.get('earliest'))
@@ -171,6 +189,9 @@ def add_people():
 
 @app.route("/_add_person")
 def add_person():
+    """
+    Adds a new regular user for each person added by the admin
+    """
     email = flask.request.args.get("email", type=str)
     code = flask.session['meeting_code']
     meeting = meetings.find_one({'code': code})
@@ -328,10 +349,17 @@ def show_available():
     return flask.redirect(flask.url_for('login'))
 
 def to_arrow(time):
+    """
+    Simple function to get all times in Pacific
+    Allowing for multiple timezones is a V2 topic
+    """
     return arrow.get(time).replace(tzinfo='US/Pacific')
 
 
 def find_user_index(meeting, email):
+    """
+    Finds the users position in the database, otherwise returns -1 if not found
+    """
     i=0
     while meeting['users'][i]['email'] != email:
         if i == len(meeting['users'])-1:
@@ -341,6 +369,10 @@ def find_user_index(meeting, email):
     return i
  
 def meeting_availability(meeting):
+    """
+    Checks the availibility to have the meeting by taking the intersection of all the
+    individual users free times
+    """
     A = Available(to_arrow(meeting['begin_date']), to_arrow(meeting['end_date']),
                   meeting['begin_time'], meeting['end_time'])
     printable_A = []
@@ -378,6 +410,9 @@ def meeting_availability(meeting):
 
 
 def find_availability(meeting, email):
+    """
+    Finds the availibility for the individual user
+    """
     i = find_user_index(meeting, email)
     availability = []
     j = 0

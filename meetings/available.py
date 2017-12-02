@@ -39,12 +39,20 @@ class Available:
             end_date_time = end_date_time.shift(days=+1)
 
     def to_iso(self):
+        """
+        Returns a list of iso times for the database
+        """
         times = []
         for time in self.time:
             times.append(time.isoformat())
         return times
 
     def fixup(self, duration):
+        """
+        Sets availability based on some duration
+        For example: if want an hour available then a 45 minute chunk would be changed
+                     to unavailable
+        """
         minimum = int(duration/15)
         print(minimum)
         start = 0
