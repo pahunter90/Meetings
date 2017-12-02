@@ -46,6 +46,7 @@ Inclusions for V2:
  - Allow the admin to pick a time for the meeting and send an email to attendees, or even add the
    meeting directly to their calendars.
  - Add a logout button and clean up the cookie issues.
+ - Add timezones other than Pacific
  - General clean-up.
  - General security improvements.
  - General code clean-up and logical improvements.
@@ -56,3 +57,5 @@ Known Issues:
    computer, the server does not do this automatically.
  - Because there is no logout the google authentication may persist even upon attempting to change
    gmail accounts.
+ - There is absolutely no support for any timezone other than US/Pacific, all times are converted
+   to this timezone (I'm sure incorrectly).
