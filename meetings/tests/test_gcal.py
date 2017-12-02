@@ -35,8 +35,9 @@ def test_event_comparisons():
 def test_avail_creation():
     start = "2017-01-01"
     end = "2017-01-07"
-    times = [12,00,21,45]
-    A = Available(start, end, times)
+    time1 = "12:00"
+    time2 = "21:45"
+    A = Available(start, end, time1, time2)
     assert len(A.time) == len(A.available)
     for i in range(len(A.available)):
         assert A.available[i] == True
@@ -45,3 +46,8 @@ def test_avail_creation():
     assert arrow.get('2017-01-07 21:45').replace(tzinfo='US/Pacific') in A.time
     assert arrow.get('2017-01-07 11:45').replace(tzinfo='US/Pacific') not in A.time
     assert arrow.get('2017-01-07 22:00').replace(tzinfo='US/Pacific') not in A.time
+
+
+
+
+
